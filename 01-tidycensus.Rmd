@@ -1,5 +1,5 @@
 ---
-title: "Using the censusapi package"
+title: "Using the tidycensus package"
 output:
   html_document:
     df_print: paged
