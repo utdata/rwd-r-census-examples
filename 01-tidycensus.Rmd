@@ -1,0 +1,82 @@
+---
+title: "Using the censusapi package"
+output:
+  html_document:
+    df_print: paged
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = "docs") })
+---
+
+This notebook is one of several that demonstrate different ways to use census related R packages. In all examples, we'll build a map of median household income for Texas counties.
+
+This version of our Census tour includes [Kyle Walker](http://personal.tcu.edu/kylewalker/)'s [tidycensus](https://walkerke.github.io/tidycensus/index.html) package. It returns census data in tidyverse-ready data frames and includes an option to pull the associated spatial geometry.
+
+This package requires that an Census API Key be installed. See documentation.
+
+```{r setup, echo=T, results='hide', message=F, warning=F}
+library(tidyverse)
+library(tidycensus)
+```
+
+## Find the variables
+
+To figure out which variables we need we can use the `load_variables` function.
+
+```{r}
+v17 <- load_variables(2017, "acs5", cache = TRUE)
+```
+
+You can then view the `v17` data frame and filter to find the variables you need.
+
+I our case we need `B19013_001` for "MEDIAN HOUSEHOLD INCOME IN THE PAST 12 MONTHS (IN 2017 INFLATION-ADJUSTED DOLLARS)".
+
+We will also get `B01003_001` for "TOTAL POPULATION" so we can show the difference in API returns of tidyverse vs censusapi.
+
+## Get the data
+
+In Kyle's package he has separate functions to call for different data sets. We'll use `get_acs()` to get our American Community Survey data.
+
+```{r}
+tx_income <- get_acs(
+  geography = "county",
+  variables = c("B01003_001","B19013_001"),
+  state = "TX"
+  )
+
+tx_income %>% head()
+```
+
+Note that even though we are pulling two variables, there is only one estimate and moe column. Each new variable is added as a new row instead of as a new column. As you add more variables, the data gets longer, but not wider. This fits the "tidy" way of managing data.
+
+## Add geometry to the download
+
+To include the spatial geometry for a call is as easy as adding `geometry = TRUE`. In this case below, I dropped the population variable because I don't need it for the map and would just have to filter it out.
+
+```{r get_map, echo=T, results='hide', message=F, warning=F}
+
+# catches shapefiles for future session to avoid redownloading.
+options(tigris_use_cache = TRUE)
+
+tx_income_map <- get_acs(
+  geography = "county",
+  variables = c("B19013_001"),
+  state = "TX",
+  geometry = TRUE
+  )
+
+```
+
+## Make the map
+
+Here we use the `geom_sf()` in ggplot to make a map.
+
+```{r}
+ggplot(tx_income_map) + 
+  geom_sf(aes(fill=estimate), color="white") +
+  theme_void() +
+  theme(panel.grid.major = element_line(colour = 'transparent')) +
+  scale_fill_distiller(palette="Oranges", direction=1, name="Median income") +
+  labs(title="2017 median income in Texas counties", caption="Source: Census Bureau/ACS5 2017")
+```
+
+- The two theme calls adjust axis and grid lines.
+- The scale option changes the color palatte and reverses the direction of the scale and updates the name on the legend.

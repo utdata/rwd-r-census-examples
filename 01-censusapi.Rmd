@@ -1,0 +1,99 @@
+---
+title: "Using the censusapi package"
+output:
+  html_document:
+    df_print: paged
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = "docs") })
+---
+
+This notebook is one of several that demonstrate different ways to use census related R packages. In all examples, we'll build a map of median household income for Texas counties.
+
+[Hannah Recht](https://twitter.com/hannah_recht?lang=en) of Bloomberg News developed the [censusapi](https://hrecht.github.io/censusapi/) to pull data directly from the Census Bureau into R. See the site for documentation and more examples on use.
+
+We'll also use the [tigris](https://github.com/walkerke/tigris) package from [Kyle Walker](http://personal.tcu.edu/kylewalker/), which allows us to download spatial geometry as shapefiles.
+
+This package requires that an Census API Key be installed. See documentation.
+
+```{r setup, echo=T, results='hide', message=F, warning=F}
+library(tidyverse)
+library(censusapi)
+library(tigris)
+```
+
+## Get a list of the APIs
+
+Using the code below will create a data frame and view of all the available data from the census API. They are commented out because I didn't need to use them once I discovered my endpoint.
+
+```{r}
+# apis <- listCensusApis()
+# View(apis)
+```
+
+We are going to use the acs5 for 2017, which is `2017/acs/acs5`.
+
+## Search for variable names
+
+In the first line below, we are using the `listCensusMetadata()` function to get a list of all the variables in the ACS. There are 25k of them, so it takes a bit of time to download, so I saved those as an .rds file to use later w/out having to download. It's all commented out for now.
+
+```{r}
+# acs_vars <- listCensusMetadata(
+#   name = "acs/acs5",
+#   vintage = 2017,
+#   type = "variables"
+#   )
+# 
+# acs_vars %>% write_rds("data-out/acs_vars.rds")
+
+# View(acs_vars)
+```
+
+Through using the filters available in the View data, I found the variable I needed for my median income map is `B19013_001E`. The "B19013" is the table name, and `001` is the data point within it. The `E` is for estimate, and `M` will give you the margin of error.
+
+We will also get `B01003_001E`, which is the total population estimate, so we know how many people live there. This is mainly to show the difference in output between censusapi and tidycensus.
+
+## Get the data
+
+```{r}
+tx_income <- getCensus(name = "acs/acs5", vintage = 2017, 
+    vars = c("NAME","B01003_001E", "B19013_001E", "B19013_001M"), 
+    region = "county:*", regionin = "state:48")
+
+tx_income %>% head()
+```
+
+Note how each variable is added as a new column, both for estimates and margins of error. As you add more variables, the data frame gets wider. This is different than the way the tidycensus package returns data, which adds new variables as rows.
+
+It's not that one way is better than the other, it's that you may have different needs depending on your goal.
+
+## Get the geometry
+
+We can use Kyle Walker's tigiris package to get the shape data. The `cb=T` value gives us a less-detailed map, which is a smaller download but good enough for our needs.
+
+```{r}
+options(tigris_use_cache = TRUE)
+options(tigris_class = "sf")
+
+tx_map <- counties("TX", cb=T)
+```
+
+## Join the data to the geometry
+
+Now that we have both data and shapes, we can join them together.
+
+```{r}
+tx_map_income <- left_join(tx_map, tx_income, by=c("COUNTYFP"="county"))
+```
+
+## Plot the map
+
+We use the `geom_sf()` in ggplot to display the shapefiles. The theme changes clean up unneeded lines and axis, and the scale changes the color and most importantly the direction of the scale so it gets darker with higher income.
+
+```{r}
+ggplot(tx_map_income) + 
+  geom_sf(aes(fill=B19013_001E), color="white") +
+  theme_void() +
+  theme(panel.grid.major = element_line(colour = 'transparent')) +
+  scale_fill_distiller(palette="Oranges", direction=1, name="Median income") +
+  labs(title="2017 median income in Texas counties", caption="Source: Census Bureau/ACS5 2017")
+```
+
